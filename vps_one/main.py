@@ -19,8 +19,8 @@ from sqlalchemy import func, select
 from .config import settings
 from .database import SessionLocal, init_db, session, write_lock
 from .models import Audit, Instance, Job, Order, PaymentEvent, Plan, User
-from .security import csrf_token, hash_password, read_session, session_token, valid_csrf, verify_password
-from .services.clicd import CLICD, plan_payload
+from .security import csrf_token, decrypt, encrypt, hash_password, read_session, session_token, valid_csrf, verify_password
+from .services.clicd import CLICD, container_status, extract_access, plan_payload, unwrap_data
 from .services.hashpay import HashPay
 from .services.mailer import send_mail
 from .services.settings import get, set_many
@@ -81,6 +81,25 @@ def plan_snapshot(plan: Plan) -> str:
     return json.dumps({field: getattr(plan, field) for field in fields}, ensure_ascii=False)
 
 
+def encrypted_access(credentials: dict[str, str]) -> str:
+    clean = {key: str(value) for key, value in credentials.items() if value not in {None, ""}}
+    return encrypt(json.dumps(clean, ensure_ascii=False)) if clean else ""
+
+
+def instance_access(instance: Instance) -> dict[str, str]:
+    if not instance.access_json:
+        return {}
+    try:
+        value = json.loads(decrypt(instance.access_json))
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def safe_status_label(status: str) -> str:
+    return {"running": "运行中", "stopped": "已关机", "starting": "启动中", "stopping": "关机中", "restarting": "重启中", "creating": "创建中", "provisioning": "部署中", "pending": "等待中"}.get(status, "状态未知")
+
+
 async def process_job(db, job: Job):
     if job.kind == "provision":
         await provision(db, job.ref_id)
@@ -94,7 +113,8 @@ async def process_job(db, job: Job):
         if not order or not user or not plan:
             raise RuntimeError("邮件任务缺少订单、用户或套餐数据")
         expiry = instance.expires_at.strftime("%Y-%m-%d") if instance.expires_at else "请登录客户中心查看"
-        await send_mail(db, user.email, f"您的 VPS {instance.name} 已交付", f"套餐：{plan.name}\n订单：{order.order_no}\n实例：{instance.name}\n状态：{instance.status}\nIP：{instance.ip or '等待网络分配'}\nIPv6：{instance.ipv6 or '未分配'}\nSSH 端口：{instance.ssh_port}\n初始密码：{instance.ssh_password or '请在客户中心重置'}\n管理链接：{instance.management_url or '请登录客户中心管理'}\n到期日期：{expiry}\n\n请妥善保存信息并及时修改初始密码。")
+        access = instance_access(instance)
+        await send_mail(db, user.email, f"您的 VPS {instance.name} 已交付", f"套餐：{plan.name}\n订单：{order.order_no}\n实例：{instance.name}\n状态：{safe_status_label(instance.status)}\n到期日期：{expiry}\n\nCLICD 管理用户名：{access.get('username') or '未返回'}\n初始密码：{access.get('password') or '未返回'}\n访问码：{access.get('access_code') or '未返回'}\n管理地址：{access.get('management_url') or '请登录客户中心查看'}\n\n以上信息仅发送给订单注册邮箱，请妥善保存并及时修改初始密码。")
 
 
 async def recover_stale_jobs(db) -> int:
@@ -147,34 +167,54 @@ async def provision(db, order_id: int):
         return
     plan = await db.get(Plan, order.plan_id)
     existing = (await db.execute(select(Instance).where(Instance.order_id == order.id))).scalar_one_or_none()
+    expires = existing.expires_at if existing and existing.expires_at else datetime.utcnow() + timedelta(days=30 * plan.months)
+    client = CLICD(await get(db, "clicd_base_url"), await get(db, "clicd_token"))
     if existing and existing.clicd_id:
+        status = await client.status(existing.clicd_id)
+        if status != "running":
+            await client.start(existing.clicd_id)
+            status = "starting"
+        existing.status, existing.last_synced_at = status, datetime.utcnow()
         if not (await db.execute(select(Job).where(Job.kind == "mail_instance", Job.ref_id == existing.id))).scalar_one_or_none():
             db.add(Job(kind="mail_instance", ref_id=existing.id))
-            await db.commit()
+        await db.commit()
         return
-    expires = datetime.utcnow() + timedelta(days=30 * plan.months)
-    client = CLICD(await get(db, "clicd_base_url"), await get(db, "clicd_token"))
     order.status = "provisioning"
     await db.commit()
     resource_name = f"vps-{order.order_no.lower()}"
+    created_response: dict = {}
     created = await client.find_by_name(resource_name)
     if not created:
-        result = await client.create(plan_payload(plan, order.order_no, expires))
-        created = result.get("data", result)
-    instance_id = str(created.get("uuid") or created.get("id") or "")
+        created_response = await client.create(plan_payload(plan, order.order_no, expires))
+        created = unwrap_data(created_response)
+    if not isinstance(created, dict):
+        raise RuntimeError("CLICD 创建响应格式无效")
+    instance_id = str(created.get("uuid") or created.get("id") or created.get("container_id") or "")
     if not instance_id:
         raise RuntimeError("CLICD 未返回实例 ID")
     detail_result = await client.get(instance_id)
-    obj = detail_result.get("data", detail_result) or created
+    obj = unwrap_data(detail_result)
+    if not isinstance(obj, dict):
+        obj = created
+    status = container_status(detail_result)
+    if status != "running":
+        await client.start(instance_id)
+        status = "starting"
+        for _ in range(5):
+            await asyncio.sleep(1)
+            status = await client.status(instance_id)
+            if status == "running":
+                break
+    credentials = extract_access(created_response) or extract_access(detail_result) or extract_access(created)
     instance = existing or Instance(user_id=order.user_id, order_id=order.id, plan_id=plan.id, name=f"VPS-{order.order_no[-8:]}")
     instance.clicd_id = instance_id
-    instance.status = obj.get("status", created.get("status", "running"))
-    instance.ip = obj.get("ip", created.get("ip", ""))
-    instance.ipv6 = obj.get("ipv6", created.get("ipv6", ""))
+    instance.status = status
+    instance.ip = str(obj.get("ip") or created.get("ip") or "")
+    instance.ipv6 = str(obj.get("ipv6") or created.get("ipv6") or "")
     instance.ssh_port = int(obj.get("ssh_port") or created.get("ssh_port") or 22)
-    instance.ssh_password = str(obj.get("ssh_password") or created.get("ssh_password") or "")
-    instance.management_url = str(obj.get("management_url") or obj.get("panel_url") or obj.get("login_url") or created.get("management_url") or "")
-    instance.access_json = json.dumps({"port_mappings": obj.get("port_mappings", created.get("port_mappings", []))}, ensure_ascii=False)
+    instance.ssh_password = ""
+    instance.management_url = ""
+    instance.access_json = encrypted_access(credentials)
     instance.expires_at = expires
     instance.last_synced_at = datetime.utcnow()
     db.add(instance)
@@ -354,10 +394,39 @@ async def callback(request: Request, db=Depends(session)):
 async def dashboard(request: Request, db=Depends(session)):
     user = guard(request)
     orders = (await db.execute(select(Order).where(Order.user_id == user["uid"]).order_by(Order.id.desc()).limit(100))).scalars().all()
-    instances = (await db.execute(select(Instance).where(Instance.user_id == user["uid"]).order_by(Instance.id.desc()))).scalars().all()
+    instances = (await db.execute(select(Instance).where(Instance.user_id == user["uid"]).order_by(Instance.id.desc()).limit(100))).scalars().all()
+    if instances:
+        base_url, token = await get(db, "clicd_base_url"), await get(db, "clicd_token")
+        if base_url and token:
+            client = CLICD(base_url, token)
+            semaphore = asyncio.Semaphore(8)
+
+            async def sync_instance(instance: Instance):
+                async with semaphore:
+                    try:
+                        instance.status = container_status(await client.get(instance.clicd_id))
+                        instance.last_synced_at = datetime.utcnow()
+                    except Exception as exc:
+                        logger.warning("实例 %s 状态同步失败：%s", instance.id, exc)
+
+            await asyncio.gather(*(sync_instance(instance) for instance in instances))
+            await db.commit()
     plans = {plan.id: plan for plan in (await db.execute(select(Plan).where(Plan.id.in_({order.plan_id for order in orders})))).scalars().all()} if orders else {}
     jobs = {job.ref_id: job for job in (await db.execute(select(Job).where(Job.kind == "provision", Job.ref_id.in_({order.id for order in orders})))).scalars().all()} if orders else {}
-    return templates.TemplateResponse("dashboard.html", ctx(request, orders=orders, instances=instances, plans=plans, jobs=jobs))
+    return templates.TemplateResponse("dashboard.html", ctx(request, orders=orders, instances=instances, plans=plans, jobs=jobs, status_label=safe_status_label))
+
+
+@app.get("/instances/{instance_id}/access")
+async def instance_credentials(instance_id: int, request: Request, db=Depends(session)):
+    user = guard(request)
+    limit(request, "instance-access", 20, 300)
+    instance = await db.get(Instance, instance_id)
+    if not instance or instance.user_id != user["uid"]:
+        raise HTTPException(404)
+    credentials = instance_access(instance)
+    db.add(Audit(user_id=user["uid"], action="instance.access.view", detail=str(instance_id), ip=request.client.host if request.client else ""))
+    await db.commit()
+    return JSONResponse({"instance": instance.name, "username": credentials.get("username", ""), "password": credentials.get("password", ""), "access_code": credentials.get("access_code", ""), "management_url": credentials.get("management_url", "")}, headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"})
 
 
 @app.post("/instances/{instance_id}/{action}")
@@ -374,6 +443,9 @@ async def instance_action(instance_id: int, action: str, request: Request, csrf:
     payload = {"template_id": template_id, "ssh_auth_mode": "keep"} if action == "reinstall" and template_id else {}
     client = CLICD(await get(db, "clicd_base_url"), await get(db, "clicd_token"))
     await client.action(instance.clicd_id, action, payload)
+    if action in {"start", "stop", "restart"}:
+        instance.status = {"start": "starting", "stop": "stopping", "restart": "restarting"}[action]
+        instance.last_synced_at = datetime.utcnow()
     db.add(Audit(user_id=user["uid"], action="instance." + action, detail=str(instance_id), ip=request.client.host if request.client else ""))
     await db.commit()
     return RedirectResponse("/dashboard", 303)
