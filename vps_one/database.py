@@ -49,6 +49,9 @@ async def migrate(conn):
     await conn.execute(text("UPDATE plans SET slug = 'plan-' || id WHERE slug IS NULL OR slug = ''"))
     await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_plans_slug ON plans(slug)"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_user_status ON orders(user_id,status)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_dispatch ON jobs(status,run_after,id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_instances_user_status ON instances(user_id,status)"))
+    await conn.execute(text("PRAGMA optimize"))
 
 
 async def init_db():

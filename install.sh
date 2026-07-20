@@ -50,7 +50,14 @@ install_docker() {
     yum -y install docker docker-compose-plugin 2>/dev/null || yum -y install docker docker-compose
   fi
   systemctl enable --now docker 2>/dev/null || service docker start
-  docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 安装失败，请检查系统软件源"
+  if ! docker compose version >/dev/null 2>&1 && have docker-compose; then
+    docker_compose() { docker-compose "$@"; }
+  fi
+  docker compose version >/dev/null 2>&1 || have docker-compose || fail "Docker Compose 安装失败，请检查系统软件源"
+}
+
+docker_compose() {
+  if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
 }
 
 prepare_source() {
@@ -64,7 +71,17 @@ prepare_source() {
     [ -n "$GITHUB_PROXY" ] && url="${GITHUB_PROXY%/}/$REPO_URL"
     log "下载源码：$url"
     if ! git clone --depth=1 "$url" "$INSTALL_DIR"; then
-      fail "源码下载失败。中国大陆可设置 GITHUB_PROXY，例如：GITHUB_PROXY=https://ghfast.top sh install.sh；或上传源码压缩包后在目录内执行。"
+      archive="https://github.com/fakawangzhan/vps-oneman-nb-p5/archive/refs/heads/main.tar.gz"
+      [ -n "$GITHUB_PROXY" ] && archive="${GITHUB_PROXY%/}/$archive"
+      log "Git 拉取失败，尝试源码压缩包"
+      tmp="$(mktemp -d)"
+      if curl -fL --retry 4 --connect-timeout 10 "$archive" -o "$tmp/source.tar.gz" && tar -xzf "$tmp/source.tar.gz" -C "$tmp"; then
+        cp -a "$tmp"/vps-oneman-nb-p5-main/. "$INSTALL_DIR"/
+        rm -rf "$tmp"
+      else
+        rm -rf "$tmp"
+        fail "源码下载失败。可设置 GITHUB_PROXY=https://ghfast.top，或上传源码包后在源码目录内执行 install.sh。"
+      fi
     fi
   fi
   cd "$INSTALL_DIR"
@@ -100,7 +117,7 @@ wait_ready() {
     fi
     printf '.'; i=$((i+1)); sleep 2
   done
-  docker compose logs --tail=150 || true
+  docker_compose logs --tail=150 || true
   fail "服务未通过健康检查"
 }
 
@@ -109,6 +126,6 @@ install_docker
 prepare_source
 write_env
 log "构建并启动 VPS-ONE"
-docker compose build --pull --build-arg "PYTHON_IMAGE=${DOCKER_REGISTRY}python:3.12-slim" --build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"
-docker compose up -d --remove-orphans
+docker_compose build --pull --build-arg "PYTHON_IMAGE=${DOCKER_REGISTRY}python:3.12-slim" --build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"
+docker_compose up -d --remove-orphans
 wait_ready
