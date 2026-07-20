@@ -30,6 +30,63 @@ def expiration_date(value: date | datetime | str) -> str:
     return value.isoformat()
 
 
+def unwrap_data(result: Any) -> Any:
+    value = result
+    for _ in range(3):
+        if not isinstance(value, dict):
+            break
+        nested = value.get("data") or value.get("container") or value.get("result")
+        if not isinstance(nested, dict):
+            break
+        value = nested
+    return value
+
+
+def container_status(result: Any) -> str:
+    obj = unwrap_data(result)
+    raw = str((obj.get("status") or obj.get("state") or obj.get("power_status") or "unknown") if isinstance(obj, dict) else "unknown").lower()
+    if raw in {"running", "started", "online", "up", "active"}:
+        return "running"
+    if raw in {"stopped", "stop", "offline", "down", "inactive", "exited"}:
+        return "stopped"
+    if raw in {"starting", "stopping", "restarting", "creating", "provisioning", "pending"}:
+        return raw
+    return "unknown"
+
+
+def extract_access(result: Any) -> dict[str, str]:
+    """Extract CLICD's generated sub-user credentials without logging them."""
+    aliases = {
+        "username": ("username", "user_name", "sub_username", "sub_user_name"),
+        "password": ("password", "initial_password", "sub_password", "login_password"),
+        "access_code": ("access_code", "code", "login_code"),
+        "management_url": ("management_url", "access_url", "login_url", "panel_url", "url"),
+    }
+    candidates: list[dict[str, Any]] = []
+
+    def visit(value: Any, depth: int = 0):
+        if depth > 4:
+            return
+        if isinstance(value, dict):
+            candidates.append(value)
+            for key, child in value.items():
+                if key in {"sub_user", "subUser", "sub_user_info", "credentials", "access", "data", "container", "result"}:
+                    visit(child, depth + 1)
+        elif isinstance(value, list):
+            for child in value[:10]:
+                visit(child, depth + 1)
+
+    visit(result)
+    extracted: dict[str, str] = {}
+    for target, keys in aliases.items():
+        for item in candidates:
+            found = next((item.get(key) for key in keys if item.get(key) not in {None, ""}), None)
+            if found is not None:
+                extracted[target] = str(found)
+                break
+    return extracted
+
+
 def error_message(response: httpx.Response) -> str:
     try:
         detail = response.json()
@@ -126,6 +183,18 @@ class CLICD:
 
     async def get(self, instance_id: str):
         return await self.request("GET", f"/containers/{instance_id}")
+
+    async def status(self, instance_id: str) -> str:
+        return container_status(await self.get(instance_id))
+
+    async def start(self, instance_id: str):
+        return await self.action(instance_id, "start")
+
+    async def stop(self, instance_id: str):
+        return await self.action(instance_id, "stop")
+
+    async def restart(self, instance_id: str):
+        return await self.action(instance_id, "restart")
 
     async def usage(self, instance_id: str):
         return await self.request("GET", f"/containers/{instance_id}/usage")
