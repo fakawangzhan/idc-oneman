@@ -1,33 +1,47 @@
-# idc-oneman
+# IDC OneMan
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+基于 FastAPI、SQLite 与 Docker Compose 的轻量 VPS 自动销售和交付系统。
 
-## Built with v0
+## 功能
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+- 用户注册、套餐购买与 HashPay 支付回调
+- 支付成功后通过 CLICD 创建并自动启动唯一订单容器
+- 实时容器状态、到期日、开机、关机和重启
+- CLICD 子用户凭据加密保存，仅订单所属用户查看
+- 产品凭据自动发送至用户注册邮箱
+- SQLite WAL、持久化任务、失败重试和异常任务恢复
+- 中国大陆网络镜像及 Git/tar.gz 下载回退
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_TjUpFTl79fw18iahG76tJeF8HJaz)
-
-## Getting Started
-
-First, run the development server:
+## 一键安装
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+curl -fsSL https://raw.githubusercontent.com/fakawangzhan/idc-oneman/main/install.sh | sudo sh
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+中国大陆网络：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/fakawangzhan/idc-oneman/main/install.sh | sudo GITHUB_PROXY=https://ghfast.top USE_CN_MIRROR=1 sh
+```
 
-## Learn More
+安装完成后访问 `http://服务器IP:9080/install`。完整配置、升级、备份、恢复和故障处理请查看 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
-To learn more, take a look at the following resources:
+## 本地验证
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+```bash
+cp .env.example .env
+docker compose build --pull
+docker compose up -d
+docker compose ps
+curl -fsS http://127.0.0.1:9080/healthz
+```
+
+运行测试：
+
+```bash
+python -m pytest -q
+```
+
+## 架构边界
+
+系统保持 SQLite 单机架构并仅运行一个 Uvicorn worker，适合轻量高并发读取和可靠订单履约，不支持多节点横向扩展。生产环境必须启用 HTTPS、设置高强度 `SECRET_KEY` 与 `MASTER_KEY`，并妥善备份 `.env` 和数据卷。
