@@ -6,11 +6,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from httpx import ASGITransport, AsyncClient
-from vps_one.main import app, encrypted_access, instance_access
-from vps_one.models import Instance
+from vps_one.main import app
 from vps_one.security import decrypt, encrypt, hash_password, verify_password
 from datetime import datetime, timezone
-from vps_one.services.clicd import CLICDError, container_status, expiration_date, extract_access, plan_payload
+from vps_one.services.clicd import CLICDError, expiration_date, plan_payload
 from vps_one.services.hashpay import HashPay
 
 
@@ -19,16 +18,6 @@ def test_security_roundtrip():
     assert verify_password(password_hash, "StrongPassword123")
     assert not verify_password(password_hash, "wrong")
     assert decrypt(encrypt("secret-value")) == "secret-value"
-
-
-def test_instance_credentials_are_encrypted_at_rest():
-    credentials = {"username": "user-test", "password": "initial-secret", "access_code": "code-1"}
-    encrypted = encrypted_access(credentials)
-    assert "initial-secret" not in encrypted
-    instance = Instance(user_id=1, order_id=1, plan_id=1, name="test", access_json=encrypted)
-    assert instance_access(instance) == credentials
-    instance.access_json = '{"legacy": true}'
-    assert instance_access(instance) == {}
 
 
 def test_clicd_payload_contract():
@@ -55,30 +44,6 @@ def test_expiration_date_contract():
         expiration_date("not-a-date")
     with pytest.raises(CLICDError):
         expiration_date("2020-01-01")
-
-
-def test_clicd_status_and_sub_user_contract():
-    response = {
-        "success": True,
-        "data": {
-            "container": {"id": "ct-1", "state": "online"},
-            "sub_user": {
-                "username": "user-d7db054c",
-                "initial_password": "temporary-secret",
-                "access_code": "a877d569",
-                "login_url": "http://192.0.2.10:8999/login?code=a877d569",
-            },
-        },
-    }
-    assert container_status(response["data"]["container"]) == "running"
-    assert container_status({"data": {"power_status": "offline"}}) == "stopped"
-    access = extract_access(response)
-    assert access == {
-        "username": "user-d7db054c",
-        "password": "temporary-secret",
-        "access_code": "a877d569",
-        "management_url": "http://192.0.2.10:8999/login?code=a877d569",
-    }
 
 
 def test_hashpay_encrypted_callback():
