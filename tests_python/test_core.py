@@ -31,6 +31,13 @@ def test_instance_credentials_are_encrypted_at_rest():
     assert instance_access(instance) == {}
 
 
+def test_clicd_status_and_sub_user_contract():
+    response = {"success": True, "data": {"container": {"id": "ct-1", "state": "online"}, "sub_user": {"username": "user-d7db054c", "initial_password": "temporary-secret", "access_code": "a877d569", "login_url": "http://192.0.2.10:8999/login?code=a877d569"}}}
+    assert container_status(response["data"]["container"]) == "running"
+    assert container_status({"data": {"power_status": "offline"}}) == "stopped"
+    assert extract_access(response) == {"username": "user-d7db054c", "password": "temporary-secret", "access_code": "a877d569", "management_url": "http://192.0.2.10:8999/login?code=a877d569"}
+
+
 def test_clicd_payload_contract():
     class Plan:
         virtualization = "lxc"; clicd_image = "debian-bookworm"; cpu = 2; memory_mb = 2048; disk_gb = 40
@@ -55,30 +62,6 @@ def test_expiration_date_contract():
         expiration_date("not-a-date")
     with pytest.raises(CLICDError):
         expiration_date("2020-01-01")
-
-
-def test_clicd_status_and_sub_user_contract():
-    response = {
-        "success": True,
-        "data": {
-            "container": {"id": "ct-1", "state": "online"},
-            "sub_user": {
-                "username": "user-d7db054c",
-                "initial_password": "temporary-secret",
-                "access_code": "a877d569",
-                "login_url": "http://192.0.2.10:8999/login?code=a877d569",
-            },
-        },
-    }
-    assert container_status(response["data"]["container"]) == "running"
-    assert container_status({"data": {"power_status": "offline"}}) == "stopped"
-    access = extract_access(response)
-    assert access == {
-        "username": "user-d7db054c",
-        "password": "temporary-secret",
-        "access_code": "a877d569",
-        "management_url": "http://192.0.2.10:8999/login?code=a877d569",
-    }
 
 
 def test_hashpay_encrypted_callback():

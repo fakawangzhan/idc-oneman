@@ -404,8 +404,7 @@ async def dashboard(request: Request, db=Depends(session)):
             async def sync_instance(instance: Instance):
                 async with semaphore:
                     try:
-                        detail = await client.get(instance.clicd_id)
-                        instance.status = container_status(detail)
+                        instance.status = container_status(await client.get(instance.clicd_id))
                         instance.last_synced_at = datetime.utcnow()
                     except Exception as exc:
                         logger.warning("实例 %s 状态同步失败：%s", instance.id, exc)
@@ -522,7 +521,7 @@ async def admin_product_limits(container_id: str, request: Request, csrf: str = 
     user = guard(request, True)
     check_csrf(request, csrf)
     if min(vcpu, ram_mb, network_down_mbps, network_up_mbps) < 0:
-        raise HTTPException(400, "资源限���无效")
+        raise HTTPException(400, "资源限制无效")
     client = CLICD(await get(db, "clicd_base_url"), await get(db, "clicd_token"))
     await client.update_resource_limit(container_id, {"vcpu": vcpu, "ram_mb": ram_mb, "network_down_mbps": network_down_mbps, "network_up_mbps": network_up_mbps, "io_read_mbps": io_read_mbps, "io_write_mbps": io_write_mbps})
     await client.update_traffic_limit(container_id, {"traffic_mode": "total", "monthly_traffic_gb": monthly_traffic_gb})

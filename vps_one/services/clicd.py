@@ -32,7 +32,7 @@ def expiration_date(value: date | datetime | str) -> str:
 
 def unwrap_data(result: Any) -> Any:
     value = result
-    for _ in range(3):
+    for _ in range(4):
         if not isinstance(value, dict):
             break
         nested = value.get("data") or value.get("container") or value.get("result")
@@ -43,8 +43,8 @@ def unwrap_data(result: Any) -> Any:
 
 
 def container_status(result: Any) -> str:
-    obj = unwrap_data(result)
-    raw = str((obj.get("status") or obj.get("state") or obj.get("power_status") or "unknown") if isinstance(obj, dict) else "unknown").lower()
+    value = unwrap_data(result)
+    raw = str((value.get("status") or value.get("state") or value.get("power_status") or "unknown") if isinstance(value, dict) else "unknown").lower()
     if raw in {"running", "started", "online", "up", "active"}:
         return "running"
     if raw in {"stopped", "stop", "offline", "down", "inactive", "exited"}:
@@ -55,7 +55,6 @@ def container_status(result: Any) -> str:
 
 
 def extract_access(result: Any) -> dict[str, str]:
-    """Extract CLICD's generated sub-user credentials without logging them."""
     aliases = {
         "username": ("username", "user_name", "sub_username", "sub_user_name"),
         "password": ("password", "initial_password", "sub_password", "login_password"),
@@ -65,7 +64,7 @@ def extract_access(result: Any) -> dict[str, str]:
     candidates: list[dict[str, Any]] = []
 
     def visit(value: Any, depth: int = 0):
-        if depth > 4:
+        if depth > 5:
             return
         if isinstance(value, dict):
             candidates.append(value)
@@ -77,14 +76,14 @@ def extract_access(result: Any) -> dict[str, str]:
                 visit(child, depth + 1)
 
     visit(result)
-    extracted: dict[str, str] = {}
+    output: dict[str, str] = {}
     for target, keys in aliases.items():
         for item in candidates:
             found = next((item.get(key) for key in keys if item.get(key) not in {None, ""}), None)
             if found is not None:
-                extracted[target] = str(found)
+                output[target] = str(found)
                 break
-    return extracted
+    return output
 
 
 def error_message(response: httpx.Response) -> str:

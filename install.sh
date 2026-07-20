@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO_URL="${REPO_URL:-https://github.com/fakawangzhan/vps-oneman-nb-p5.git}"
+REPO_URL="${REPO_URL:-https://github.com/fakawangzhan/idc-oneman.git}"
 GITHUB_PROXY="${GITHUB_PROXY:-}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vps-one}"
 VPS_ONE_PORT="${VPS_ONE_PORT:-9080}"
@@ -71,12 +71,12 @@ prepare_source() {
     [ -n "$GITHUB_PROXY" ] && url="${GITHUB_PROXY%/}/$REPO_URL"
     log "下载源码：$url"
     if ! git clone --depth=1 "$url" "$INSTALL_DIR"; then
-      archive="https://github.com/fakawangzhan/vps-oneman-nb-p5/archive/refs/heads/main.tar.gz"
+      archive="https://github.com/fakawangzhan/idc-oneman/archive/refs/heads/main.tar.gz"
       [ -n "$GITHUB_PROXY" ] && archive="${GITHUB_PROXY%/}/$archive"
       log "Git 拉取失败，尝试源码压缩包"
       tmp="$(mktemp -d)"
       if curl -fL --retry 4 --connect-timeout 10 "$archive" -o "$tmp/source.tar.gz" && tar -xzf "$tmp/source.tar.gz" -C "$tmp"; then
-        cp -a "$tmp"/vps-oneman-nb-p5-main/. "$INSTALL_DIR"/
+        cp -a "$tmp"/idc-oneman-main/. "$INSTALL_DIR"/
         rm -rf "$tmp"
       else
         rm -rf "$tmp"
