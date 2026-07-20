@@ -10,13 +10,13 @@
 ## 2. 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fakawangzhan/vps-oneman-nb-p5/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/fakawangzhan/idc-oneman/main/install.sh | sudo sh
 ```
 
 中国大陆网络不稳定时：
 
 ```bash
-curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/fakawangzhan/vps-oneman-nb-p5/main/install.sh | sudo GITHUB_PROXY=https://ghfast.top USE_CN_MIRROR=1 sh
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/fakawangzhan/idc-oneman/main/install.sh | sudo GITHUB_PROXY=https://ghfast.top USE_CN_MIRROR=1 sh
 ```
 
 安装脚本自动识别 Debian/RHEL 系、安装 Docker、探测 GitHub、设置 PyPI 和 Docker Hub 国内镜像，并在 Git Clone 失败时回退到 tar.gz 源码包。离线或受限网络可将源码压缩包上传服务器，解压后在源码根目录执行 `sudo USE_CN_MIRROR=1 sh install.sh`。
