@@ -1,11 +1,13 @@
-# VPS-ONE 部署说明
+# IDC-ONEMAN 部署说明 
+
+演示DEMO:https://p02--vps--mgsq65kksm7q.code.run/
 
 ## 1. 服务器要求
 
 - Debian 11+/Ubuntu 20.04+，或 CentOS Stream/RHEL 8+
 - 1 核 CPU、1 GB 内存、10 GB 可用磁盘起步
 - 已开放 TCP 9080；生产环境建议由 Nginx/Caddy 反代并启用 HTTPS
-- CLICD API Key 具备容器读取、创建和查询权限
+- CLICD API Key / HashPay 商户
 
 ## 2. 一键安装
 
@@ -33,24 +35,9 @@ curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/fakawangzhan/idc
    - SMTP Host、Port、加密方式、账号、授权码与发件地址。
 3. 分别点击 CLICD、HashPay、SMTP 测试按钮。
 4. 在“套餐管理”配置 CLICD 节点、镜像、资源、网络和有效月份。
-5. HashPay 回调地址为 `https://你的域名/payments/hashpay/callback`。
+5. HashPay 回调地址为 `https://你的域名/hashpay/callback`。
 
-SMTP 常用配置：465 + `ssl`，或 587 + `starttls`。部分邮件服务必须使用 SMTP 授权码而非网页登录密码；发件地址通常必须与账号或服务端授权地址一致。
-
-## 4. 本次关键修复
-
-- CLICD `expires_at` 统一发送严格日期 `YYYY-MM-DD`，不再发送 `YYYY-MM-DD HH:MM:SS`。
-- 容器创建前按订单资源名查询，降低支付回调重试造成重复创建的风险。
-- 已有实例但缺少邮件任务时自动补建邮件任务。
-- 邮件任务校验实例、订单、用户和套餐，邮件展示日期而非 Python datetime 文本。
-- SMTP 支持 SSL、STARTTLS 和 plain，含地址、端口、认证、收件人拒绝及超时检查。
-- 后台任务带指数退避，启动后自动恢复超时的 running 任务。
-- 创建完成后自动调用 CLICD 开机接口并轮询实际状态，用户面板通过单容器 API 同步运行状态。
-- 每笔订单仅展示唯一绑定容器及到期时间，提供开机、关机、重启和管理入口。
-- CLICD 返回的子用户名、初始密码、访问码和管理链接使用 `MASTER_KEY` 加密保存，仅实例所属用户可查看，并同步发送注册邮箱。
-- SQLite 使用 WAL、busy timeout、关键组合索引与单写锁。该模式适合高并发读取的单机部署，不应横向启动多个应用副本。
-
-## 5. 运维命令
+## 4. 运维命令
 
 在安装目录执行：
 
@@ -72,13 +59,12 @@ docker compose start
 
 恢复前必须停止服务，解压备份到同一数据卷。请同时保存 `.env`；丢失 `MASTER_KEY` 后无法解密后台保存的 API/SMTP 密钥。
 
-## 6. 验收流程
+## 5. 流程
 
-1. 后台 CLICD 测试连接成功。
-2. 后台 SMTP 测试邮件到达测试邮箱。
-3. 使用 HashPay 测试订单完成支付。
-4. 后台任务中 `provision` 和 `mail_instance` 均为 done。
-5. 客户中心显示容器信息，CLICD 中仅有一个对应订单资源。
-6. 邮箱收到套餐、订单号、实例、IP、SSH 端口、初始密码、管理链接和到期日期。
+1. 后台 CLICD 切小鸡。
+2. 后台 SMTP 邮件发送小鸡关键信息。
+3. 使用 HashPay 订单完成支付。
+4. IDC-ONEMAN 添加销售套餐 管理用户。
 
-若邮件未到：先检查后台任务错误，再检查垃圾箱、发件域 SPF/DKIM/DMARC 和邮件服务投递日志。若 CLICD 返回 400，任务错误会保存服务端的 `message/detail/error`，可在修正套餐后等待自动重试或重新触发履约。
+
+感谢开源代码 CLICD / HashPay / EdgeKey,大佬们有实力的请随意进行深度二开，JUST DO IT!人人皆是OneMan！
