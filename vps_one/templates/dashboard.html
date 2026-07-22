@@ -1,61 +1,6 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>云主机管理｜VPS-ONE</title>
-  <link rel="stylesheet" href="/static/app.css">
-</head>
-<body>
-<header class="nav">
-  <div class="container">
-    <a class="brand" href="/"><b>VPS</b>-ONE</a>
-    <div class="links"><span class="muted">用户 #{{ user.uid }}</span><a class="btn" href="/#plans">购买云主机</a></div>
-  </div>
-</header>
-<main class="section">
-  <div class="container console-main">
-    <div class="section-head">
-      <div><span class="eyebrow">云主机管理</span><h1>我的云主机</h1></div>
-      <p>套餐与容器一一绑定，连接信息直接同步自 CLICD。</p>
-    </div>
-    {% if request.query_params.get('reset') == 'success' %}<div class="notice success" role="status">SSH 密码已重置，连接信息已发送至您的注册邮箱。</div>{% endif %}
-    {% if instances %}
-    <div class="instance-grid simple-grid">
-      {% for instance in instances %}
-      {% set plan = plans.get(instance.plan_id) %}
-      {% set access = access_by_instance.get(instance.id, {}) %}
-      <article class="card simple-instance">
-        <div class="row instance-heading">
-          <div><span class="eyebrow">{{ instance.name }}</span><h2>{{ plan.name if plan else '容器实例' }}</h2></div>
-          <span class="status status-{{ instance.status }}"><i></i>{{ status_label(instance.status) }}</span>
-        </div>
-        <div class="host-facts">
-          <div><small>到期时间</small><strong>{{ instance.expires_at.strftime('%Y-%m-%d') if instance.expires_at else '待同步' }}</strong></div>
-          <div><small>容器标识</small><code>{{ instance.clicd_id or '待分配' }}</code></div>
-        </div>
-        <dl class="connection-facts" aria-label="容器连接信息">
-          <div><dt>IPv4 / IP</dt><dd><code>{{ instance.ip or '未分配' }}</code></dd></div>
-          <div><dt>IPv6</dt><dd><code>{{ instance.ipv6 or '未分配' }}</code></dd></div>
-          <div><dt>SSH 端口</dt><dd><code>{{ instance.ssh_port or 22 }}</code></dd></div>
-          <div><dt>SSH 密码</dt><dd><code>{{ access.get('password') or '请点击下方按钮重置' }}</code></dd></div>
-          <div><dt>操作系统</dt><dd>{{ instance.os_name or (plan.clicd_template_name if plan else '') or (plan.clicd_image if plan else '') or '待同步' }}</dd></div>
-          <div><dt>套餐规格</dt><dd>{{ plan.cpu if plan else '-' }} vCPU · {{ plan.memory_mb if plan else '-' }} MB · {{ plan.disk_gb if plan else '-' }} GB</dd></div>
-        </dl>
-        <div class="power-actions">
-          <form method="post" action="/instances/{{ instance.id }}/start"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn primary" {% if instance.status in ['running','starting'] %}disabled{% endif %}>开机</button></form>
-          <form method="post" action="/instances/{{ instance.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if instance.status in ['stopped','stopping'] %}disabled{% endif %}>关机</button></form>
-          <form method="post" action="/instances/{{ instance.id }}/restart"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if instance.status != 'running' %}disabled{% endif %}>重启</button></form>
-          <form method="post" action="/instances/{{ instance.id }}/reset-password" onsubmit="return confirm('确定重置 SSH 密码并将新连接信息发送到注册邮箱吗？')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn dark" type="submit">重置SSH密码</button></form>
-        </div>
-        <p class="sync-note">*请重置SSH密码，查收邮件</p>
-      </article>
-      {% endfor %}
-    </div>
-    {% else %}<div class="empty">暂无已交付云主机，支付完成后系统会自动创建并启动容器。</div>{% endif %}
-    {% set pending = orders|selectattr('status','in',['pending','payment_pending','paid','provisioning'])|list %}
-    {% if pending %}<section class="pending-orders"><div class="section-head compact"><div><span class="eyebrow">处理中</span><h2>待交付订单</h2></div></div><div class="order-list">{% for order in pending %}<div class="order-row"><strong>{{ order.order_no }}</strong><span class="pill">{{ order.status }}</span>{% if jobs.get(order.id) and jobs[order.id].error %}<small>{{ jobs[order.id].error }}</small>{% endif %}</div>{% endfor %}</div></section>{% endif %}
-  </div>
-</main>
-</body>
-</html>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>云主机管理｜VPS-ONE</title><link rel="stylesheet" href="/static/app.css"></head><body><header class="nav"><div class="container"><a class="brand" href="/"><b>VPS</b>-ONE</a><div class="links"><span class="muted">用户 #{{user.uid}}</span><a class="btn" href="/#plans">购买云主机</a></div></div></header>
+<main class="section"><div class="container console-main"><div class="section-head"><div><span class="eyebrow">云主机管理</span><h1>我的云主机</h1></div><p>每笔订单仅展示唯一绑定容器，状态直接同步自 CLICD。</p></div>
+{% if instances %}<div class="instance-grid simple-grid">{% for instance in instances %}<article class="card simple-instance"><div class="row instance-heading"><div><span class="eyebrow">{{ instance.name }}</span><h2>容器实例</h2></div><span class="status status-{{ instance.status }}"><i></i>{{ status_label(instance.status) }}</span></div><div class="host-facts"><div><small>到期时间</small><strong>{{ instance.expires_at.strftime('%Y-%m-%d') if instance.expires_at else '待同步' }}</strong></div><div><small>容器标识</small><code>{{ instance.clicd_id }}</code></div></div><div class="power-actions"><form method="post" action="/instances/{{ instance.id }}/start"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn primary" {% if instance.status in ['running','starting'] %}disabled{% endif %}>开机</button></form><form method="post" action="/instances/{{ instance.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if instance.status in ['stopped','stopping'] %}disabled{% endif %}>关机</button></form><form method="post" action="/instances/{{ instance.id }}/restart"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if instance.status != 'running' %}disabled{% endif %}>重启</button></form><button class="btn dark access-button" type="button" data-instance-id="{{ instance.id }}">管理入口</button></div><p class="sync-note">最近同步：{{ instance.last_synced_at.strftime('%Y-%m-%d %H:%M:%S') if instance.last_synced_at else '等待首次同步' }}</p></article>{% endfor %}</div>{% else %}<div class="empty">暂无已交付云主机，支付完成后系统会自动创建并启动容器。</div>{% endif %}
+{% set pending = orders|selectattr('status','in',['pending','paid','provisioning'])|list %}{% if pending %}<section class="pending-orders"><div class="section-head compact"><div><span class="eyebrow">处理中</span><h2>待交付订单</h2></div></div><div class="order-list">{% for order in pending %}<div class="order-row"><strong>{{ order.order_no }}</strong><span class="pill">{{ order.status }}</span>{% if jobs.get(order.id) and jobs[order.id].error %}<small>{{ jobs[order.id].error }}</small>{% endif %}</div>{% endfor %}</div></section>{% endif %}</div></main>
+<dialog id="access-dialog" class="access-dialog" aria-labelledby="access-title"><form method="dialog" class="dialog-close"><button aria-label="关闭">×</button></form><span class="eyebrow">安全管理入口</span><h2 id="access-title">CLICD 登录信息</h2><p class="muted">以下真实凭据仅对当前实例所属账号显示，请勿转发。</p><div id="access-loading" class="notice">正在安全获取凭据…</div><div id="access-content" class="credential-list" hidden><label>用户名<div><code id="access-username"></code><button type="button" data-copy="access-username">复制</button></div></label><label>初始密码<div><code id="access-password"></code><button type="button" data-copy="access-password">复制</button></div></label><label>访问码<div><code id="access-code"></code><button type="button" data-copy="access-code">复制</button></div></label><a id="access-url" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">打开管理入口</a></div></dialog>
+<script>const dialog=document.getElementById('access-dialog'),loading=document.getElementById('access-loading'),content=document.getElementById('access-content');document.querySelectorAll('.access-button').forEach(button=>button.addEventListener('click',async()=>{dialog.showModal();loading.hidden=false;loading.textContent='正在安全获取凭据…';content.hidden=true;try{const response=await fetch(`/instances/${button.dataset.instanceId}/access`,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});if(!response.ok)throw new Error('无法获取管理凭据');const data=await response.json();document.getElementById('access-username').textContent=data.username||'未返回';document.getElementById('access-password').textContent=data.password||'未返回';document.getElementById('access-code').textContent=data.access_code||'未返回';const link=document.getElementById('access-url');link.href=data.management_url||'#';link.hidden=!data.management_url;loading.hidden=true;content.hidden=false}catch(error){loading.textContent=error.message||'获取失败，请稍后重试'}}));document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);button.textContent='已复制';setTimeout(()=>button.textContent='复制',1200)}));</script></body></html>
